@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Parkinson's Progression Analyzer</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; max-width: 900px; margin: 2rem auto; padding: 20px; background-color: #f9f9f9; }
+        .container { background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1, h2 { color: #333; }
+        input[type="number"], button { font-size: 1rem; padding: 10px; border-radius: 5px; border: 1px solid #ccc; margin-bottom: 10px; }
+        button { background-color: #007bff; color: white; border-color: #007bff; cursor: pointer; }
+        button:hover { background-color: #0056b3; }
+        .form-row { display: flex; gap: 20px; align-items: center; }
+        .results-grid { margin-top: 30px; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; }
+        .result-card { background-color: #f0f8ff; padding: 20px; border-radius: 5px; border-left: 5px solid #007bff; }
+        .result-card h3 { margin-top: 0; }
+        .error { color: #dc3545; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Parkinson's Symptom Progression Analyzer</h1>
+        <p>Enter a patient's data to classify their trajectory and forecast future progression.</p>
+        
+        <form action="/analyze" method="post">
+            <div>
+                <h4>UPDRS Scores (at least 2):</h4>
+                <div class="form-row">
+                    <input type="number" step="0.1" name="updrs" placeholder="Day 1">
+                    <input type="number" step="0.1" name="updrs" placeholder="Day 2">
+                    <input type="number" step="0.1" name="updrs" placeholder="Day 3">
+                    <input type="number" step="0.1" name="updrs" placeholder="Day 4">
+                    <input type="number" step="0.1" name="updrs" placeholder="Day 5">
+                </div>
+            </div>
+            <div>
+                <h4>Context (Optional):</h4>
+                <div class="form-row">
+                    <input type="number" name="age" placeholder="Patient Age">
+                    <select name="sex" style="padding: 10px;">
+                        <option value="">Select Sex...</option>
+                        <option value="0">Male</option>
+                        <option value="1">Female</option>
+                    </select>
+                </div>
+            </div>
+            <br>
+            <button type="submit">Analyze Trajectory</button>
+        </form>
+
+        {% if error %}
+            <p class="error"><strong>Error:</strong> {{ error }}</p>
+        {% endif %}
+
+        {% if results %}
+        <div class="results-section">
+            <h2>Analysis Report</h2>
+            <div class="results-grid">
+                <div class="result-card">
+                    <h3>Predicted Cohort</h3>
+                    <p style="font-size: 1.2rem; font-weight: bold;">{{ results.cohort }}</p>
+                </div>
+                <div class="result-card">
+                    <h3>Closest Match</h3>
+                    <p>Patient #{{ results.match_id }}</p>
+                </div>
+                <div class="result-card">
+                    <h3>Match Confidence</h3>
+                    <p style="font-size: 1.2rem; font-weight: bold;">{{ "%.1f"|format(results.confidence) }}%</p>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        
+        {% if forecastGraphJSON %}
+        <div id="forecastChart" class="chart"></div>
+        {% endif %}
+
+        {% if xai_image %}
+        <div class="results-section" style="margin-top:20px;">
+            <h2>Alignment (XAI)</h2>
+            <div class="result-card">
+                <img style="max-width:100%;height:auto" src="data:image/png;base64,{{ xai_image }}" alt="DTW Alignment (XAI)" />
+            </div>
+        </div>
+        {% endif %}
+        
+    </div>
+    
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    {% if forecastGraphJSON %}
+    <script id="forecast-data" type="application/json">{{ forecastGraphJSON | safe }}</script>
+    <script type="text/javascript">
+        const dataEl = document.getElementById('forecast-data');
+        const graph = JSON.parse(dataEl.textContent);
+        Plotly.newPlot('forecastChart', graph, {});
+    </script>
+    {% endif %}
+</body>
+</html>

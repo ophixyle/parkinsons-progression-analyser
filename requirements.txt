@@ -21,6 +21,7 @@ defusedxml==0.7.1
 dtaidistance==2.3.13
 executing==2.2.1
 fastjsonschema==2.21.2
+flask==3.0.3
 fonttools==4.59.2
 fqdn==1.5.1
 h11==0.16.0
@@ -71,6 +72,7 @@ parso==0.8.5
 pexpect==4.9.0
 pillow==11.3.0
 platformdirs==4.4.0
+plotly==5.22.0
 prometheus_client==0.22.1
 prompt_toolkit==3.0.52
 psutil==7.0.0
