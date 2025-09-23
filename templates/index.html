@@ -10,43 +10,62 @@
         input[type="number"], button, select { font-size: 1rem; padding: 10px; border-radius: 5px; border: 1px solid #ccc; margin-bottom: 10px; }
         button { background-color: #007bff; color: white; border-color: #007bff; cursor: pointer; }
         button:hover { background-color: #0056b3; }
-        .form-row { display: flex; flex-wrap: wrap; gap: 20px; align-items: center; }
+        button.secondary { background-color: #6c757d; border-color: #6c757d; }
+        button.secondary:hover { background-color: #5a6268; }
+        button.danger { background-color: #dc3545; border-color: #dc3545; }
+        button.danger:hover { background-color: #c82333; }
+        .form-row, .button-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+        .updrs-inputs { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+        .updrs-inputs input { width: 100px; }
         .results-section { margin-top: 30px; }
         .results-grid { margin-top: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; }
         .result-card { background-color: #f0f8ff; padding: 20px; border-radius: 5px; border-left: 5px solid #007bff; }
         .result-card h3 { margin-top: 0; }
         .error { color: #dc3545; background-color: #f8d7da; border: 1px solid #f5c6cb; padding: 15px; border-radius: 5px; margin-top: 20px; }
+        .tooltip { position: relative; display: inline-block; cursor: pointer; border-bottom: 1px dotted black; }
+        .tooltip .tooltiptext { visibility: hidden; width: 220px; background-color: #555; color: #fff; text-align: center; border-radius: 6px; padding: 5px; position: absolute; z-index: 1; bottom: 125%; left: 50%; margin-left: -110px; opacity: 0; transition: opacity 0.3s; }
+        .tooltip:hover .tooltiptext { visibility: visible; opacity: 1; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Parkinson's Symptom Progression Analyzer</h1>
+        <h1>Parkinson's Progression Analyzer</h1>
         <p>Enter a patient's Total UPDRS scores over time to classify their trajectory and forecast future progression.</p>
         
-        <form action="/analyze" method="post">
+        <form id="analysis-form" action="/analyze" method="post">
             <div>
-                <h4>UPDRS Scores (at least 2):</h4>
-                <div class="form-row">
-                    <input type="number" step="0.1" name="updrs" placeholder="Visit 1">
-                    <input type="number" step="0.1" name="updrs" placeholder="Visit 2">
-                    <input type="number" step="0.1" name="updrs" placeholder="Visit 3">
-                    <input type="number" step="0.1" name="updrs" placeholder="Visit 4">
-                    <input type="number" step="0.1" name="updrs" placeholder="Visit 5">
+                <h4>
+                    <div class="tooltip">Total UPDRS Scores (?)
+                        <span class="tooltiptext">The Unified Parkinson's Disease Rating Scale is used to measure the severity of symptoms.</span>
+                    </div>
+                </h4>
+                <div id="updrs-container" class="updrs-inputs">
+                    <input type="number" step="0.1" name="updrs" placeholder="Visit 1" required>
+                    <input type="number" step="0.1" name="updrs" placeholder="Visit 2" required>
+                </div>
+                <div class="button-row" style="margin-top: 10px;">
+                    <button type="button" class="secondary" onclick="addVisit()">Add Visit</button>
+                    <button type="button" class="secondary" onclick="removeVisit()">Remove Last Visit</button>
                 </div>
             </div>
+
             <div style="margin-top: 20px;">
-                <h4>Context (Optional but Recommended):</h4>
+                <h4>Context (Optional):</h4>
                 <div class="form-row">
                     <input type="number" name="age" placeholder="Patient Age">
                     <select name="sex">
-                        <option value="" disabled selected>Select Sex...</option>
+                        <option value="" selected>Select Sex...</option>
                         <option value="0">Male</option>
                         <option value="1">Female</option>
+                        <option value="">Other / Prefer not to say</option>
                     </select>
                 </div>
             </div>
             <br>
-            <button type="submit">Analyze Trajectory</button>
+            <div class="button-row">
+                <button type="submit">Analyze Trajectory</button>
+                <button type="button" class="danger" onclick="clearForm()">Clear Form</button>
+            </div>
         </form>
 
         {% if error %}
@@ -56,6 +75,11 @@
         {% if results %}
         <div class="results-section">
             <h2>Analysis Report</h2>
+            <p style="font-size: 0.9rem; color: #555;">
+                {% if request.form.get('sex') == "" %}
+                    Note: Sex was not specified, so the analysis was performed by comparing against all patients in the dataset.
+                {% endif %}
+            </p>
             <div class="results-grid">
                 <div class="result-card">
                     <h3>Predicted Cohort</h3>
@@ -81,12 +105,11 @@
         <div class="results-section" style="margin-top:20px;">
             <h2>Alignment Explanation (DTW)</h2>
             <div class="result-card" style="padding: 10px; background-color: #fff;">
-                <p style="padding: 0 10px; font-size: 0.9rem; color: #555;">This plot shows how the shape of the input patient's trajectory (top) was aligned or "warped" to find the best match (bottom). The lines connect corresponding time points as determined by the Dynamic Time Warping algorithm.</p>
+                <p style="padding: 0 10px; font-size: 0.9rem; color: #555;">This plot shows how the shape of the input patient's trajectory was aligned or "warped" to find the best match. The lines connect corresponding time points as determined by the Dynamic Time Warping algorithm.</p>
                 <img style="max-width:100%; height:auto;" src="data:image/png;base64,{{ xai_image }}" alt="DTW Alignment Plot" />
             </div>
         </div>
         {% endif %}
-        
     </div>
     
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
@@ -98,5 +121,40 @@
         Plotly.newPlot('forecastChart', graph, {responsive: true});
     </script>
     {% endif %}
+
+    <script>
+        const container = document.getElementById('updrs-container');
+
+        function addVisit() {
+            const visitCount = container.children.length + 1;
+            const newInput = document.createElement('input');
+            newInput.type = 'number';
+            newInput.step = '0.1';
+            newInput.name = 'updrs';
+            newInput.placeholder = 'Visit ' + visitCount;
+            newInput.required = true;
+            container.appendChild(newInput);
+        }
+
+        function removeVisit() {
+            if (container.children.length > 2) {
+                container.removeChild(container.lastChild);
+            } else {
+                alert('A minimum of 2 data points is required.');
+            }
+        }
+
+        function clearForm() {
+            const form = document.getElementById('analysis-form');
+            form.reset(); 
+
+            while (container.children.length > 2) {
+                container.removeChild(container.lastChild);
+            }
+            for (let i = 0; i < container.children.length; i++) {
+                container.children[i].value = '';
+            }
+        }
+    </script>
 </body>
 </html>
