@@ -3,21 +3,20 @@ import numpy as np
 import plotly
 import plotly.graph_objects as go
 import json
-import io
-import base64
 
 # --- IMPORT the core logic from your analysis engine ---
-# This is professional practice: keeps the app separate from the science.
-from analysis_engine import find_best_match, dtw_visualisation
+from analysis_engine import ParkinsonsAnalyzer, CONFIG
 
 app = Flask(__name__, template_folder='templates')
 
-# --- Main route for the web page ---
+# --- Instantiate Analyzer once on startup ---
+# This is efficient as data loading and model training happens only once.
+analyzer = ParkinsonsAnalyzer(CONFIG)
+
 @app.route('/')
 def home():
     return render_template('index.html')
 
-# --- Route to handle the analysis request ---
 @app.route('/analyze', methods=['POST'])
 def analyze():
     try:
@@ -37,47 +36,69 @@ def analyze():
     except (ValueError, TypeError):
         return render_template('index.html', error="Invalid input. Please enter valid numbers.")
 
-    # --- Run the full V6.1 analysis engine! ---
-    results = find_best_match(patient_data, patient_age=patient_age, patient_sex=patient_sex)
+    # --- Run the full analysis using the ParkinsonsAnalyzer instance ---
+    results = analyzer.predict(
+        new_patient_series=patient_data, 
+        patient_age=patient_age, 
+        patient_sex=patient_sex
+    )
     
-    # If the engine returns results, generate the visualizations
+    # Handle cases where the analysis returns an error
+    if "error" in results:
+        return render_template('index.html', error=results['error'])
+    
+    # --- Generate Visualizations ---
+    forecastGraphJSON = None
+    xai_image = None
+    
     if results:
-        # Create the Forecast Plot ("Crystal Ball")
-        fig1 = go.Figure()
-        cutoff_point = 20
-        matched_trajectory = results['match_trajectory_interp']
-        x_full, x_forecast = np.arange(100), np.arange(cutoff_point - 1, 100)
-        fig1.add_trace(go.Scatter(x=np.arange(len(results['new_patient_interp'])), y=results['new_patient_interp'], mode='lines+markers', name='Your Patient\'s Trajectory', line=dict(color='red', width=4)))
-        fig1.add_trace(go.Scatter(x=x_full, y=matched_trajectory, mode='lines', name=f'Best Match (Patient #{results["match_id"]})', line=dict(color='gray', dash='dot')))
-        fig1.add_trace(go.Scatter(x=x_forecast, y=matched_trajectory[cutoff_point-1:], mode='lines', name='Projected Forecast', line=dict(color='green', dash='dash', width=4)))
-        title_text = f"Forecast: Aligns with '{results['cohort'].split('(')[0].strip()}'"
-        fig1.update_layout(title=title_text, xaxis_title="Normalized Time", yaxis_title="Interpolated UPDRS Score", legend=dict(x=0.01, y=0.99))
-        forecastGraphJSON = json.dumps(fig1, cls=plotly.utils.PlotlyJSONEncoder)
+        # Create the Forecast Plot
+        fig = go.Figure()
+        
+        input_len = len(results['input_data'])
+        forecast_len = len(results['forecast'])
+        
+        # 1. Plot the User's Input Data
+        x_input = np.arange(input_len)
+        fig.add_trace(go.Scatter(x=x_input, y=results['input_data'], mode='lines+markers', name='Your Patient\'s Data', line=dict(color='red', width=4)))
+        
+        # 2. Plot the Synthesized Forecast
+        # We stitch the forecast to the last point of the input data for a continuous line
+        x_forecast = np.arange(input_len - 1, input_len + forecast_len)
+        stitched_forecast = np.concatenate(([results['input_data'][-1]], results['forecast']))
+        fig.add_trace(go.Scatter(x=x_forecast, y=stitched_forecast, mode='lines', name='Synthesized Forecast', line=dict(color='green', dash='dash', width=4)))
+        
+        # 3. Plot the Best Matching Trajectory for context
+        best_match_full_traj = results['best_match']['full_trajectory']
+        x_full = np.arange(len(best_match_full_traj))
+        fig.add_trace(go.Scatter(x=x_full, y=best_match_full_traj, mode='lines', name=f'Best Match (Patient #{results["best_match"]["match_id"]})', line=dict(color='gray', dash='dot')))
+        
+        # Update layout
+        title_text = f"Forecast aligns with '{results['predicted_cohort']}' Cohort"
+        fig.update_layout(
+            title=title_text,
+            xaxis_title="Normalized Time Horizon",
+            yaxis_title="Total UPDRS Score",
+            legend=dict(x=0.01, y=0.99)
+        )
+        forecastGraphJSON = json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
 
-        # Generate XAI (DTW alignment) image and embed as base64
+        # Generate XAI (DTW alignment) image
         try:
-            fig_xai = dtw_visualisation(
-                results['new_patient_interp'],
-                matched_trajectory,
-                results['match_id']
+            xai_image = analyzer.generate_dtw_plot(
+                results['input_data'],
+                results['best_match']['full_trajectory']
             )
-            buf = io.BytesIO()
-            fig_xai.savefig(buf, format='png', bbox_inches='tight')
-            buf.seek(0)
-            xai_image = base64.b64encode(buf.getvalue()).decode('utf-8')
         except Exception as e:
             print(f"XAI generation failed: {e}")
             xai_image = None
 
-        return render_template(
-            'index.html',
-            results=results,
-            forecastGraphJSON=forecastGraphJSON,
-            xai_image=xai_image
-        )
-
-    else:
-        return render_template('index.html', error="Could not find a suitable match based on the provided data and context.")
+    return render_template(
+        'index.html',
+        results=results,
+        forecastGraphJSON=forecastGraphJSON,
+        xai_image=xai_image
+    )
 
 if __name__ == '__main__':
     app.run(debug=True)

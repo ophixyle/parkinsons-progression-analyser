@@ -7,38 +7,39 @@
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; max-width: 900px; margin: 2rem auto; padding: 20px; background-color: #f9f9f9; }
         .container { background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         h1, h2 { color: #333; }
-        input[type="number"], button { font-size: 1rem; padding: 10px; border-radius: 5px; border: 1px solid #ccc; margin-bottom: 10px; }
+        input[type="number"], button, select { font-size: 1rem; padding: 10px; border-radius: 5px; border: 1px solid #ccc; margin-bottom: 10px; }
         button { background-color: #007bff; color: white; border-color: #007bff; cursor: pointer; }
         button:hover { background-color: #0056b3; }
-        .form-row { display: flex; gap: 20px; align-items: center; }
-        .results-grid { margin-top: 30px; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; }
+        .form-row { display: flex; flex-wrap: wrap; gap: 20px; align-items: center; }
+        .results-section { margin-top: 30px; }
+        .results-grid { margin-top: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; }
         .result-card { background-color: #f0f8ff; padding: 20px; border-radius: 5px; border-left: 5px solid #007bff; }
         .result-card h3 { margin-top: 0; }
-        .error { color: #dc3545; }
+        .error { color: #dc3545; background-color: #f8d7da; border: 1px solid #f5c6cb; padding: 15px; border-radius: 5px; margin-top: 20px; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Parkinson's Symptom Progression Analyzer</h1>
-        <p>Enter a patient's data to classify their trajectory and forecast future progression.</p>
+        <p>Enter a patient's Total UPDRS scores over time to classify their trajectory and forecast future progression.</p>
         
         <form action="/analyze" method="post">
             <div>
                 <h4>UPDRS Scores (at least 2):</h4>
                 <div class="form-row">
-                    <input type="number" step="0.1" name="updrs" placeholder="Day 1">
-                    <input type="number" step="0.1" name="updrs" placeholder="Day 2">
-                    <input type="number" step="0.1" name="updrs" placeholder="Day 3">
-                    <input type="number" step="0.1" name="updrs" placeholder="Day 4">
-                    <input type="number" step="0.1" name="updrs" placeholder="Day 5">
+                    <input type="number" step="0.1" name="updrs" placeholder="Visit 1">
+                    <input type="number" step="0.1" name="updrs" placeholder="Visit 2">
+                    <input type="number" step="0.1" name="updrs" placeholder="Visit 3">
+                    <input type="number" step="0.1" name="updrs" placeholder="Visit 4">
+                    <input type="number" step="0.1" name="updrs" placeholder="Visit 5">
                 </div>
             </div>
-            <div>
-                <h4>Context (Optional):</h4>
+            <div style="margin-top: 20px;">
+                <h4>Context (Optional but Recommended):</h4>
                 <div class="form-row">
                     <input type="number" name="age" placeholder="Patient Age">
-                    <select name="sex" style="padding: 10px;">
-                        <option value="">Select Sex...</option>
+                    <select name="sex">
+                        <option value="" disabled selected>Select Sex...</option>
                         <option value="0">Male</option>
                         <option value="1">Female</option>
                     </select>
@@ -49,7 +50,7 @@
         </form>
 
         {% if error %}
-            <p class="error"><strong>Error:</strong> {{ error }}</p>
+            <div class="error"><strong>Error:</strong> {{ error }}</div>
         {% endif %}
 
         {% if results %}
@@ -58,14 +59,14 @@
             <div class="results-grid">
                 <div class="result-card">
                     <h3>Predicted Cohort</h3>
-                    <p style="font-size: 1.2rem; font-weight: bold;">{{ results.cohort }}</p>
+                    <p style="font-size: 1.2rem; font-weight: bold;">{{ results.predicted_cohort }}</p>
                 </div>
                 <div class="result-card">
                     <h3>Closest Match</h3>
-                    <p>Patient #{{ results.match_id }}</p>
+                    <p>Patient #{{ results.best_match.match_id }}</p>
                 </div>
                 <div class="result-card">
-                    <h3>Match Confidence</h3>
+                    <h3>Prediction Confidence</h3>
                     <p style="font-size: 1.2rem; font-weight: bold;">{{ "%.1f"|format(results.confidence) }}%</p>
                 </div>
             </div>
@@ -73,14 +74,15 @@
         {% endif %}
         
         {% if forecastGraphJSON %}
-        <div id="forecastChart" class="chart"></div>
+        <div id="forecastChart" class="chart" style="margin-top: 20px;"></div>
         {% endif %}
 
         {% if xai_image %}
         <div class="results-section" style="margin-top:20px;">
-            <h2>Alignment (XAI)</h2>
-            <div class="result-card">
-                <img style="max-width:100%;height:auto" src="data:image/png;base64,{{ xai_image }}" alt="DTW Alignment (XAI)" />
+            <h2>Alignment Explanation (DTW)</h2>
+            <div class="result-card" style="padding: 10px; background-color: #fff;">
+                <p style="padding: 0 10px; font-size: 0.9rem; color: #555;">This plot shows how the shape of the input patient's trajectory (top) was aligned or "warped" to find the best match (bottom). The lines connect corresponding time points as determined by the Dynamic Time Warping algorithm.</p>
+                <img style="max-width:100%; height:auto;" src="data:image/png;base64,{{ xai_image }}" alt="DTW Alignment Plot" />
             </div>
         </div>
         {% endif %}
@@ -93,7 +95,7 @@
     <script type="text/javascript">
         const dataEl = document.getElementById('forecast-data');
         const graph = JSON.parse(dataEl.textContent);
-        Plotly.newPlot('forecastChart', graph, {});
+        Plotly.newPlot('forecastChart', graph, {responsive: true});
     </script>
     {% endif %}
 </body>
